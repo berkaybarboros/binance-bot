@@ -1,4 +1,7 @@
-import time
+rm bot.py
+nano bot.pyrm bot.py
+nano bot.pyrm bot.py
+nano bot.pyimport time
 import os
 import requests
 from binance.client import Client
@@ -13,14 +16,14 @@ client = Client(
     testnet=True
 )
 
-TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def telegram_gonder(mesaj):
     try:
-        token   = str(TELEGRAM_TOKEN).strip()
+        token = str(TELEGRAM_TOKEN).strip()
         chat_id = str(TELEGRAM_CHAT_ID).strip()
-        url     = "https://api.telegram.org/bot" + token + "/sendMessage"
+        url = "https://api.telegram.org/bot" + token + "/sendMessage"
         requests.post(url, data={"chat_id": chat_id, "text": mesaj}, timeout=10)
     except Exception as e:
         print(f"Telegram hata: {e}")
@@ -40,64 +43,7 @@ def hesapla_rsi(fiyatlar, periyot=14):
 def hesapla_ema(fiyatlar, periyot):
     if len(fiyatlar) < periyot:
         return fiyatlar[-1]
-    k   = 2 / (periyot + 1)
-    ema = sum(fiyatlar[:periyot]) / periyot
-    for f in fiyatlar[periyot:]:
-        ema = f * k + ema * (1 - k)
-    return ema
-
-def hesapla_hacim_ort(hacimler, periyot=20):
-    return sum(hacimler[-periyot:]) / periyot
-
-def veri_al(sembol="BTCUSDT", interval="4h", limit=100):
-    mumlar = client.get_klines(symbol=sembol, interval=interval, limit=limit)
-    fiyatlar, hacimler = [], []
-    for m in mumlar:
-        fiyatlar.append(float(m[4]))
-  
-import time
-import os
-import requests
-from binance.client import Client
-from dotenv import load_dotenv
-from datetime import datetime
-
-load_dotenv()
-
-client = Client(
-    api_key=os.getenv("TESTNET_API_KEY"),
-    api_secret=os.getenv("TESTNET_SECRET"),
-    testnet=True
-)
-
-TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-def telegram_gonder(mesaj):
-    try:
-        token   = str(TELEGRAM_TOKEN).strip()
-        chat_id = str(TELEGRAM_CHAT_ID).strip()
-        url     = "https://api.telegram.org/bot" + token + "/sendMessage"
-        requests.post(url, data={"chat_id": chat_id, "text": mesaj}, timeout=10)
-    except Exception as e:
-        print(f"Telegram hata: {e}")
-
-def hesapla_rsi(fiyatlar, periyot=14):
-    kazanc, kayip = [], []
-    for i in range(1, len(fiyatlar)):
-        fark = fiyatlar[i] - fiyatlar[i-1]
-        kazanc.append(max(fark, 0))
-        kayip.append(abs(min(fark, 0)))
-    ort_k = sum(kazanc[-periyot:]) / periyot
-    ort_z = sum(kayip[-periyot:]) / periyot
-    if ort_z == 0:
-        return 100
-    return 100 - (100 / (1 + ort_k / ort_z))
-
-def hesapla_ema(fiyatlar, periyot):
-    if len(fiyatlar) < periyot:
-        return fiyatlar[-1]
-    k   = 2 / (periyot + 1)
+    k = 2 / (periyot + 1)
     ema = sum(fiyatlar[:periyot]) / periyot
     for f in fiyatlar[periyot:]:
         ema = f * k + ema * (1 - k)
@@ -117,9 +63,9 @@ def veri_al(sembol="BTCUSDT", interval="4h", limit=100):
 def bakiye_al(varlik="USDT"):
     try:
         hesap = client.get_account()
-        for v in hesap['balances']:
-            if v['asset'] == varlik:
-                return float(v['free'])
+        for v in hesap["balances"]:
+            if v["asset"] == varlik:
+                return float(v["free"])
     except Exception as e:
         print(f"Bakiye hata: {e}")
     return 0.0
@@ -127,97 +73,163 @@ def bakiye_al(varlik="USDT"):
 def sinyal_uret(fiyatlar, hacimler):
     if len(fiyatlar) < 70:
         return "BEKLE", 0, 0
-    rsi       = hesapla_rsi(fiyatlar)
-    ema50     = hesapla_ema(fiyatlar, 50)
+    rsi = hesapla_rsi(fiyatlar)
+    ema50 = hesapla_ema(fiyatlar, 50)
     hacim_ort = hesapla_hacim_ort(hacimler)
-    guncel    = fiyatlar[-1]
+    guncel = fiyatlar[-1]
     gun_hacim = hacimler[-1]
     al = (rsi < 55 and guncel > ema50 and gun_hacim > hacim_ort * 1.1)
     return ("AL" if al else "BEKLE"), rsi, ema50
 
+def gunluk_ozet_gonder(ist, fiyat, rsi, bakiye, pozisyon_var):
+    bugun = datetime.now().strftime("%d %B %Y")
+    mesaj = (
+        f"Gunluk Ozet - {bugun}\n"
+        f"----------------\n"
+        f"BTC Fiyat  : ${fiyat:,.0f}\n"
+        f"RSI        : {rsi:.1f}\n"
+        f"----------------\n"
+        f"Bugun islem: {ist['bugun_islem']}\n"
+        f"Karli      : {ist['bugun_karli']}\n"
+        f"Zararli    : {ist['bugun_zararli']}\n"
+        f"Bugun K/Z  : ${ist['bugun_kar_zarar']:+.2f}\n"
+        f"----------------\n"
+        f"Acik poz   : {'VAR' if pozisyon_var else 'YOK'}\n"
+        f"Bakiye     : ${bakiye:,.2f} USDT\n"
+        f"----------------"
+    )
+    print(mesaj)
+    telegram_gonder(mesaj)
+
+def haftalik_ozet_gonder(ist, bakiye, baslangic):
+    bugun = datetime.now().strftime("%d %B %Y")
+    net = ((bakiye - baslangic) / baslangic) * 100
+    mesaj = (
+        f"Haftalik Rapor - {bugun}\n"
+        f"----------------\n"
+        f"Toplam islem: {ist['hafta_islem']}\n"
+        f"Karli       : {ist['hafta_karli']}\n"
+        f"Zararli     : {ist['hafta_zararli']}\n"
+        f"Net K/Z     : ${ist['hafta_kar_zarar']:+.2f}\n"
+        f"----------------\n"
+        f"Baslangic   : ${baslangic:,.2f}\n"
+        f"Su an       : ${bakiye:,.2f}\n"
+        f"Net getiri  : %{net:+.2f}\n"
+        f"----------------"
+    )
+    print(mesaj)
+    telegram_gonder(mesaj)
+
 def bot_calistir():
-    sembol       = "BTCUSDT"
+    sembol = "BTCUSDT"
     pozisyon_var = False
     giris_fiyati = 0.0
-    islem_no     = 0
+    islem_no = 0
+    baslangic_bakiye = bakiye_al("USDT")
+    ist = {
+        "bugun_islem": 0, "bugun_karli": 0,
+        "bugun_zararli": 0, "bugun_kar_zarar": 0.0,
+        "hafta_islem": 0, "hafta_karli": 0,
+        "hafta_zararli": 0, "hafta_kar_zarar": 0.0,
+    }
+    son_gunluk = None
+    son_haftalik = None
 
-    basla_mesaji = (
-        "🤖 Bot başladı — Testnet modu\n"
-        "━━━━━━━━━━━━━━━━\n"
+    basla = (
+        "Bot basladi - Testnet modu\n"
+        "----------------\n"
         "Strateji: RSI + EMA50 + Hacim\n"
-        "AL sinyali : RSI < 55\n"
-        "SAT sinyali: RSI > 60 veya\n"
-        "             %5 kar / %2.5 stop-loss\n"
-        "Kontrol    : Her 4 saatte bir\n"
-        "━━━━━━━━━━━━━━━━"
+        "AL : RSI < 55\n"
+        "SAT: RSI > 60 / %5 kar / %2.5 stop\n"
+        "Gunluk ozet : 09:00\n"
+        "Haftalik    : Pazartesi 09:00\n"
+        "----------------"
     )
-    print(basla_mesaji)
-    telegram_gonder(basla_mesaji)
+    print(basla)
+    telegram_gonder(basla)
 
     while True:
         try:
-            zaman              = datetime.now().strftime("%H:%M")
-            fiyatlar, hacimler = veri_al(sembol, interval="4h", limit=100)
-            guncel_fiyat       = fiyatlar[-1]
-            rsi                = hesapla_rsi(fiyatlar)
-            ema50              = hesapla_ema(fiyatlar, 50)
-            usdt_bakiye        = bakiye_al("USDT")
-            btc_bakiye         = bakiye_al("BTC")
+            simdi = datetime.now()
+            zaman = simdi.strftime("%H:%M")
+            fiyatlar, hacimler = veri_al(sembol)
+            guncel_fiyat = fiyatlar[-1]
+            rsi = hesapla_rsi(fiyatlar)
+            ema50 = hesapla_ema(fiyatlar, 50)
+            usdt_bakiye = bakiye_al("USDT")
+            btc_bakiye = bakiye_al("BTC")
 
-            print(
-                f"[{zaman}] BTC: ${guncel_fiyat:,.0f} | "
-                f"RSI: {rsi:.1f} | EMA50: ${ema50:,.0f} | "
-                f"USDT: ${usdt_bakiye:.1f} | "
-                f"Poz: {'VAR' if pozisyon_var else 'YOK'}"
-            )
+            print(f"[{zaman}] BTC: ${guncel_fiyat:,.0f} | RSI: {rsi:.1f} | EMA50: ${ema50:,.0f} | USDT: ${usdt_bakiye:.1f} | Poz: {'VAR' if pozisyon_var else 'YOK'}")
+
+            bugun_str = simdi.strftime("%Y-%m-%d")
+            hafta_str = simdi.strftime("%Y-W%W")
+
+            if zaman >= "09:00" and son_gunluk != bugun_str:
+                gunluk_ozet_gonder(ist, guncel_fiyat, rsi, usdt_bakiye, pozisyon_var)
+                ist.update({"bugun_islem": 0, "bugun_karli": 0, "bugun_zararli": 0, "bugun_kar_zarar": 0.0})
+                son_gunluk = bugun_str
+
+            if simdi.weekday() == 0 and zaman >= "09:00" and son_haftalik != hafta_str:
+                haftalik_ozet_gonder(ist, usdt_bakiye, baslangic_bakiye)
+                ist.update({"hafta_islem": 0, "hafta_karli": 0, "hafta_zararli": 0, "hafta_kar_zarar": 0.0})
+                son_haftalik = hafta_str
 
             if pozisyon_var:
                 kar_yuzde = (guncel_fiyat - giris_fiyati) / giris_fiyati
                 cikis = None
                 if kar_yuzde >= 0.05:
-                    cikis = f"🎯 Kar al (+{kar_yuzde*100:.1f}%)"
+                    cikis = f"Kar al (+{kar_yuzde*100:.1f}%)"
                 elif kar_yuzde <= -0.025:
-                    cikis = f"🛑 Stop-loss ({kar_yuzde*100:.1f}%)"
+                    cikis = f"Stop-loss ({kar_yuzde*100:.1f}%)"
                 elif rsi > 60:
-                    cikis = f"📉 RSI yüksek ({rsi:.1f})"
-
+                    cikis = f"RSI yuksek ({rsi:.1f})"
                 if cikis:
                     btc_miktar = round(btc_bakiye * 0.99, 5)
                     if btc_miktar > 0:
                         client.order_market_sell(symbol=sembol, quantity=btc_miktar)
-                        kar_usdt     = btc_miktar * (guncel_fiyat - giris_fiyati)
+                        kar_usdt = btc_miktar * (guncel_fiyat - giris_fiyati)
                         pozisyon_var = False
+                        ist["bugun_islem"] += 1
+                        ist["hafta_islem"] += 1
+                        ist["bugun_kar_zarar"] += kar_usdt
+                        ist["hafta_kar_zarar"] += kar_usdt
+                        if kar_usdt > 0:
+                            ist["bugun_karli"] += 1
+                            ist["hafta_karli"] += 1
+                        else:
+                            ist["bugun_zararli"] += 1
+                            ist["hafta_zararli"] += 1
                         mesaj = (
-                            f"{'✅' if kar_yuzde > 0 else '❌'} SATIŞ #{islem_no}\n"
-                            f"━━━━━━━━━━━━━━━━\n"
+                            f"SATIS #{islem_no}\n"
+                            f"----------------\n"
                             f"Sebep  : {cikis}\n"
                             f"Fiyat  : ${guncel_fiyat:,.0f}\n"
-                            f"Giriş  : ${giris_fiyati:,.0f}\n"
+                            f"Giris  : ${giris_fiyati:,.0f}\n"
                             f"K/Z    : ${kar_usdt:+.2f}\n"
                             f"Bakiye : ${usdt_bakiye:,.1f}\n"
-                            f"━━━━━━━━━━━━━━━━"
+                            f"----------------"
                         )
                         print(mesaj)
                         telegram_gonder(mesaj)
             else:
                 sinyal, rsi_val, ema_val = sinyal_uret(fiyatlar, hacimler)
                 if sinyal == "AL" and usdt_bakiye > 10:
-                    harcama    = usdt_bakiye * 0.10
+                    harcama = usdt_bakiye * 0.10
                     btc_miktar = round(harcama / guncel_fiyat, 5)
                     client.order_market_buy(symbol=sembol, quantity=btc_miktar)
                     pozisyon_var = True
                     giris_fiyati = guncel_fiyat
-                    islem_no    += 1
+                    islem_no += 1
                     mesaj = (
-                        f"📈 ALIM #{islem_no}\n"
-                        f"━━━━━━━━━━━━━━━━\n"
+                        f"ALIM #{islem_no}\n"
+                        f"----------------\n"
                         f"Coin   : {sembol}\n"
                         f"Fiyat  : ${guncel_fiyat:,.0f}\n"
                         f"Miktar : {btc_miktar} BTC\n"
                         f"Harcama: ${harcama:.1f} USDT\n"
                         f"RSI    : {rsi_val:.1f}\n"
                         f"EMA50  : ${ema_val:,.0f}\n"
-                        f"━━━━━━━━━━━━━━━━\n"
+                        f"----------------\n"
                         f"Hedef  : ${giris_fiyati * 1.05:,.0f} (+%5)\n"
                         f"Stop   : ${giris_fiyati * 0.975:,.0f} (-2.5%)"
                     )
@@ -227,11 +239,9 @@ def bot_calistir():
             time.sleep(4 * 3600)
 
         except Exception as e:
-            hata = f"❌ Hata: {str(e)}"
+            hata = f"Hata: {str(e)}"
             print(hata)
             telegram_gonder(hata)
             time.sleep(60)
 
 bot_calistir()
-
-
